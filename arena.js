@@ -1,6 +1,11 @@
 var DEFAULT_BUG_ENERGY = 40;
 var ENERGY_PER_SPACE = 5;
 var COMBINATION_COST = 10;
+var map = ["xxxxx",
+           "x  Bx",
+           "x   x",
+           "xb  x",
+           "xxxxx"];
 
 //utility functions
 function forEachIn(object, action) {
@@ -10,8 +15,42 @@ function forEachIn(object, action) {
   }
 }
 
+//game manager
+function ArenaManager() {
+  var games = {};
+  var openGames = [];
+  var players = [];
+}
+
+ArenaManager.prototype.createGame = function() {
+  var gameId = connect.utils.uid(50);
+  if(!this.games[gameId]) {
+    this.games[gameId] = new BugArena(map);
+    this.openGames.push(this.games[gameId]);
+  }
+  else throw "Duplicate game id";
+};
+
+ArenaManager.prototype.validate = function(game, player) {
+  return games[game] && games[game].hasPlayer(player);
+};
+
+ArenaManager.prototype.addPlayer = function(player) {
+  if(this.openGames.length <= 0) {
+    this.createGame();
+  }
+  
+  var lastGameId = this.openGames[this.openGames.length - 1];
+  this.games[lastGameId].addPlayer(player);
+  if(this.games[lastGameId].isFull()) {
+    this.start(this.games[this.openGames.pop()]);
+  }
+  
+  return lastGameId;
+};
+
 //bugger arena
-function BugArena(p_initMap) {
+function BugArena(p_initMap, p_maxPlayers) {
   if(p_initMap.length < 1)
     throw "Invalid map size. Height < 1";
   for(row p_initMap) {
@@ -20,7 +59,19 @@ function BugArena(p_initMap) {
   this._map = this.createMap(p_initMap);
   this.height = p_initMap.length;
   this.width = p_initMap[0].length;
+  this.players = [];
+  
+  if(p_maxPlayers) {
+    this.maxPlayers = p_maxPlayers;
+  }
+  else {
+    this.maxPlayers = 2;
+  }
 }
+
+BugArena.prototype.hasPlayer = function(playerId) {
+  return this.players.indexOf(playerId) !== -1;
+};
 
 BugArena.prototype.createMap = function(p_2dArray) {
   var map = [];
@@ -32,6 +83,10 @@ BugArena.prototype.createMap = function(p_2dArray) {
     map.push(row);
   }
   return map;
+};
+
+BugArena.prototype.addPlayer = function(playerId) {
+  this.players.push(playerId);
 };
 
 BugArena.prototype.getHtml = function(indent) {
@@ -98,7 +153,7 @@ BugArena.prototype.move = function(x1,y1,x2,y2,playerId) {
         this._map[y2][x2] = bug;
       }
       else {
-        bug.destroy();
+        bug.destroy(this);
       }
     }
     else if(destinationObject.prototype.constructor === Bug)
@@ -107,22 +162,22 @@ BugArena.prototype.move = function(x1,y1,x2,y2,playerId) {
       if(destinationObject.playerId === playerId)
       {
         destinationObject += bug.energy - COMBINATION_COST;
-        bug.destroy();
+        bug.destroy(this);
       }
       //move onto enemy bug
       else
       {
         if(bug.energy > destinationObject.energy) {
           bug.energy -= destinationObject.energy;
-          destinationObject.destroy();
+          destinationObject.destroy(this);
         }
-        else if(destinationObject.energy) {
+        else if(destinationObject.energy > bug.energy) {
           destinationObject.energy -= bug.energy;
-          bug.destroy();
+          bug.destroy(this);
         }
         else {
-          bug.destroy();
-          destinationObject.destroy();
+          bug.destroy(this);
+          destinationObject.destroy(this);
         }
       }
     }
@@ -142,13 +197,6 @@ BugArena.prototype.mapHasBug = function(x,y,playerId) {
   return undefined;
 };
 
-var Bug = function(x,y,playerId) {
-  this.x = x;
-  this.y = y;
-  this.playerId = playerId;
-  this.energy = DEFAULT_BUG_ENERGY;
-};
-
 BugArena.prototype.destroy = function(object) {
   if(object.x > 0 && object.x < this.width && object.y > 0 && object.y < this.height)
   {
@@ -162,6 +210,13 @@ BugArena.prototype.destroy = function(object) {
   else throw "trying to destory object in invalid position";
 };
 
+var Bug = function(x,y,playerId) {
+  this.x = x;
+  this.y = y;
+  this.playerId = playerId;
+  this.energy = DEFAULT_BUG_ENERGY;
+};
+
 Bug.prototype.getHtml = function() {
   retval = "<td class=\"column" + this.y + " background-bug " + 'player' + this.playerId + "\"><span>";
   retval += this.energy;
@@ -169,8 +224,9 @@ Bug.prototype.getHtml = function() {
   return retval;
 };
 
-Bug.prototype.destroy = function() {
-  BugArena.destroy(this);
+Bug.prototype.destroy = function(arena) {
+  if(arena) arena.destroy(this);
+  else throw "can not destroy bug from an undefined arena";
 };  
 
 var Wall = function(x,y) {
@@ -182,10 +238,4 @@ Wall.prototype.getHtml = function() {
   return "<td class=\"column" + this.y + " background-wall\"/>";
 };
 
-var map = ["xxxxx",
-           "x  Bx",
-           "xb  x",
-           "x   x",
-           "xxxxx"];
-           
-exports.ba = new BugArena(map);
+exports.gameManager = new ArenaManager();
