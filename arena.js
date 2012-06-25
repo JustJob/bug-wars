@@ -32,7 +32,7 @@ ArenaManager.prototype.createGame = function() {
 };
 
 ArenaManager.prototype.validate = function(game, player) {
-  return games[game] && games[game].hasPlayer(player);
+  return game && games[game] && games[game].hasPlayer(player);
 };
 
 ArenaManager.prototype.addPlayer = function(player) {
@@ -49,6 +49,35 @@ ArenaManager.prototype.addPlayer = function(player) {
   return lastGameId;
 };
 
+ArenaManager.prototype.handleActions = function(game, player, actions, callback) {
+  if(this.validate(game, player) && this.games[game].isTurn(player)) {
+    for(action in actions) {
+      switch(action.type) {
+        case 'move':
+          if(action.params && 
+             action.params.length === 2 &&
+             action.params[0].length === 2 &&
+             action.params[1].length === 2) {
+            this.games[game].move(parseInt(action.params[0][0]),
+                                  parseInt(action.params[0][1]),
+                                  parseInt(action.params[1][0]),
+                                  parseInt(action.params[1][1]),
+                                  player);
+          }
+          else console.warn('malformed movement');
+          break;
+        default:
+          console.warn('invalid movement' + action.type)
+          break;
+      }
+      this.games[game].changeTurn();
+    }
+  }
+  else throw 'invalid player';
+
+  callback();
+};
+
 //bugger arena
 function BugArena(p_initMap, p_maxPlayers) {
   if(p_initMap.length < 1)
@@ -60,6 +89,9 @@ function BugArena(p_initMap, p_maxPlayers) {
   this.height = p_initMap.length;
   this.width = p_initMap[0].length;
   this.players = [];
+  this.started = false;
+  this.ended = false;
+  this.turn = undefined;
   
   if(p_maxPlayers) {
     this.maxPlayers = p_maxPlayers;
@@ -69,8 +101,28 @@ function BugArena(p_initMap, p_maxPlayers) {
   }
 }
 
+BugArena.prototype.start = function() {
+  if(!this.started) {
+    this.turn = parseInt(Math.random() * this.maxPlayers);
+    this.started = true;
+  }
+};
+
+BugArena.prototype.isTurn = function(playerId) {
+  return playerId === this.players[this.turn];
+};
+
+BugArena.prototype.changeTurn = function() {
+  this.turn++;
+  if(this.turn == this.maxPlayers) this.turn -= this.maxPlayers;
+};
+
+BugArena.prototype.distance = function(x1,x2,y1,y2) {
+  return Math.abs(x1 - x2) + Math.abs(y1 - y2);
+}
+
 BugArena.prototype.hasPlayer = function(playerId) {
-  return this.players.indexOf(playerId) !== -1;
+  return playerId != undefined && this.players.indexOf(playerId) !== -1;
 };
 
 BugArena.prototype.createMap = function(p_2dArray) {

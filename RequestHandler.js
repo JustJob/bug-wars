@@ -86,5 +86,23 @@ function game(req, res) {
 }
 
 function sendActions(req, res) {
-  
+  var postData = '';
+  req.addListener('data', function(chunk) {
+    postData += chunk;
+  });
+  req.addListener('end', function() {
+    cosoloe.log('request received at ' req.url);
+    if(postData != '') {
+      arena.gameManager.handleActions(req.session.game, req.session.player, JSON.parse(postData), function() {
+        sendGameState(req, res);
+      });
+    }
+    else {
+      res.end();
+    }
+  });
+}
+
+function sendGameState(req, res) {
+
 }
