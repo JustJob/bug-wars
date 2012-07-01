@@ -1,3 +1,5 @@
+var connect = require('connect');
+
 var DEFAULT_BUG_ENERGY = 40;
 var ENERGY_PER_SPACE = 5;
 var COMBINATION_COST = 10;
@@ -35,19 +37,40 @@ ArenaManager.prototype.validate = function(game, player) {
   return game && games[game] && games[game].hasPlayer(player);
 };
 
-ArenaManager.prototype.addPlayer = function(player) {
+ArenaManager.prototype.addPlayer = function(playerId) {
   if(this.openGames.length <= 0) {
     this.createGame();
   }
   
   var lastGameId = this.openGames[this.openGames.length - 1];
-  this.games[lastGameId].addPlayer(player);
+  this.games[lastGameId].addPlayer(playerId);
   if(this.games[lastGameId].isFull()) {
     this.start(this.games[this.openGames.pop()]);
   }
   
   return lastGameId;
-};
+}
+
+ArenaManager.prototype.watchGame = function(gameId, callback) {
+  if(!this.games[gameId]) {
+    throw "gameId not in games list"
+  }
+  this.games[gameId].addReadyCallback(callback);
+}
+
+ArenaManager.prototype.watchTurn = function(gameId, playerId, callback) {
+  if(this.validate(this.gameId, playerId)) {
+    this.games[gameId].addTurnCallback(playerId, callback);
+  }
+  else throw "the game could not be validated"
+}
+
+ArenaManager.prototype.registerView = function(gameId, playerId, callback) {
+  if(this.validate(this.gameId, playerId)) {
+    this.games[gameId].addViewCallback(playerId, callback);
+  }
+  else throw "the game could not be validated"
+}
 
 ArenaManager.prototype.handleActions = function(game, player, actions, callback) {
   if(this.validate(game, player) && this.games[game].isTurn(player)) {
@@ -70,12 +93,15 @@ ArenaManager.prototype.handleActions = function(game, player, actions, callback)
           console.warn('invalid movement' + action.type)
           break;
       }
-      this.games[game].changeTurn();
     }
+    this.games[game].updateViews();
+    this.games[game].changeTurn();
   }
   else throw 'invalid player';
 
-  callback();
+  if(callback) {
+    callback();
+  }
 };
 
 //bugger arena
@@ -88,10 +114,13 @@ function BugArena(p_initMap, p_maxPlayers) {
   this._map = this.createMap(p_initMap);
   this.height = p_initMap.length;
   this.width = p_initMap[0].length;
-  this.players = [];
+  this.players = []; //list of player ids
   this.started = false;
   this.ended = false;
   this.turn = undefined;
+  this.readyCallbacks = [];
+  this.viewCallbacks = [];
+  this.turnCallbacks = {};
   
   if(p_maxPlayers) {
     this.maxPlayers = p_maxPlayers;
@@ -105,8 +134,32 @@ BugArena.prototype.start = function() {
   if(!this.started) {
     this.turn = parseInt(Math.random() * this.maxPlayers);
     this.started = true;
+    for(var i = 0; i < this.readyCallbacks.length; i++) {
+      this.readyCallbacks[i](this._map);
+    }
+    this.turnCallbacks[this.players[this.turn]]();
   }
+  else throw "tried to start game multiple times"
 };
+
+BugArena.prototype.addReadyCallback = function(callback) {
+  this.readyCallbacks.push(callback);
+}
+
+BugArena.prototype.addTurnCallback = function(playerId, callback) {
+  if(this.turnCallbacks[playerId]) throw "that player already has a turn callback";
+  this.turnCallbacks[playerId] = callback;
+}
+
+BugArena.prototype.addViewCallback = function(callback) {
+  this.viewCallbacks.push(callback);
+}
+
+BugArena.prototype.updateViews = function() {
+  for(var i = 0; i < this.viewCallbacks.length; i++) {
+    this.viewCallbacks[i](this._map);
+  }
+}
 
 BugArena.prototype.isTurn = function(playerId) {
   return playerId === this.players[this.turn];
@@ -115,6 +168,7 @@ BugArena.prototype.isTurn = function(playerId) {
 BugArena.prototype.changeTurn = function() {
   this.turn++;
   if(this.turn == this.maxPlayers) this.turn -= this.maxPlayers;
+  this.turnCallbacks[this.players[this.turn]]();
 };
 
 BugArena.prototype.distance = function(x1,x2,y1,y2) {
@@ -139,6 +193,8 @@ BugArena.prototype.createMap = function(p_2dArray) {
 
 BugArena.prototype.addPlayer = function(playerId) {
   this.players.push(playerId);
+  if(p_maxPlayers == this.players.length)
+    throw "trying to add a player to a full game... ya noob";
 };
 
 BugArena.prototype.getHtml = function(indent) {
@@ -263,6 +319,7 @@ BugArena.prototype.destroy = function(object) {
 };
 
 var Bug = function(x,y,playerId) {
+  this.type = "bug"; //used for serialization
   this.x = x;
   this.y = y;
   this.playerId = playerId;
@@ -282,6 +339,7 @@ Bug.prototype.destroy = function(arena) {
 };  
 
 var Wall = function(x,y) {
+  this.type = 'wall'; //used for serialization
   this.x = x;
   this.y = y;
 };
