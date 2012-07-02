@@ -14,6 +14,7 @@ var io     = require('socket.io').listen(app);
 app.listen(8080);
 
 io
+  .set('log level', 2)
   .of('/game')
   .on('connection', require("./SocketHandler").handleSocket);
 

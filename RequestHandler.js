@@ -5,7 +5,7 @@ var template = require("./templates");
 var fs = require("fs");
 var arena = require('./arena');
 var connect = require('connect');
-var url = require('url';
+var url = require('url');
 
 var handler = {};
 handler['/'] = index;

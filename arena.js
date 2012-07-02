@@ -3,11 +3,32 @@ var connect = require('connect');
 var DEFAULT_BUG_ENERGY = 40;
 var ENERGY_PER_SPACE = 5;
 var COMBINATION_COST = 10;
-var map = ["xxxxx",
-           "x  Bx",
-           "x   x",
-           "xb  x",
-           "xxxxx"];
+var map = ["xxxxxxxxxxxxxxxxxxxxxxxxx",
+           "xB                     Bx",
+           "x                       x",
+           "x                       x",
+           "x                       x",
+           "x                       x",
+           "x                       x",
+           "x                       x",
+           "x       B               x",
+           "x               B       x",
+           "x                       x",
+           "x                 B     x",
+           "x                       x",
+           "x                       x",
+           "x                b      x",
+           "x                       x",
+           "x                       x",
+           "x       b               x",
+           "x                       x",
+           "x                       x",
+           "x                       x",
+           "x           b           x",
+           "x                       x",
+           "x                       x",
+           "xb                     bx",
+           "xxxxxxxxxxxxxxxxxxxxxxxxx"];
 
 //utility functions
 function forEachIn(object, action) {
@@ -19,33 +40,34 @@ function forEachIn(object, action) {
 
 //game manager
 function ArenaManager() {
-  var games = {};
-  var openGames = [];
-  var players = [];
+  this.games = {};
+  this.openGames = [];
+  this.players = [];
 }
 
 ArenaManager.prototype.createGame = function() {
   var gameId = connect.utils.uid(50);
   if(!this.games[gameId]) {
-    this.games[gameId] = new BugArena(map);
-    this.openGames.push(this.games[gameId]);
+    this.games[gameId] = new BugArena();
+    this.openGames.push(gameId);
   }
   else throw "Duplicate game id";
 };
 
 ArenaManager.prototype.validate = function(game, player) {
-  return game && games[game] && games[game].hasPlayer(player);
+  return game && this.games[game] && this.games[game].hasPlayer(player);
 };
 
-ArenaManager.prototype.addPlayer = function(playerId) {
+ArenaManager.prototype.addPlayer = function(playerId, callback) {
   if(this.openGames.length <= 0) {
     this.createGame();
   }
   
   var lastGameId = this.openGames[this.openGames.length - 1];
   this.games[lastGameId].addPlayer(playerId);
+
   if(this.games[lastGameId].isFull()) {
-    this.start(this.games[this.openGames.pop()]);
+    this.openGames.pop();
   }
   
   return lastGameId;
@@ -59,33 +81,38 @@ ArenaManager.prototype.watchGame = function(gameId, callback) {
 }
 
 ArenaManager.prototype.watchTurn = function(gameId, playerId, callback) {
-  if(this.validate(this.gameId, playerId)) {
+  if(this.validate(gameId, playerId)) {
     this.games[gameId].addTurnCallback(playerId, callback);
   }
   else throw "the game could not be validated"
 }
 
 ArenaManager.prototype.registerView = function(gameId, playerId, callback) {
-  if(this.validate(this.gameId, playerId)) {
-    this.games[gameId].addViewCallback(playerId, callback);
+  if(this.validate(gameId, playerId)) {
+    this.games[gameId].addViewCallback(callback);
   }
   else throw "the game could not be validated"
 }
 
 ArenaManager.prototype.handleActions = function(game, player, actions, callback) {
+  var actionsThatWork = [];
   if(this.validate(game, player) && this.games[game].isTurn(player)) {
-    for(action in actions) {
+    for(var i = 0; i < actions.length; i++) {
+      var action = actions[i];
       switch(action.type) {
         case 'move':
-          if(action.params && 
+          console.log('moving bug for player ' + player);
+          if(action.params &&
              action.params.length === 2 &&
              action.params[0].length === 2 &&
              action.params[1].length === 2) {
-            this.games[game].move(parseInt(action.params[0][0]),
+            if(this.games[game].move(parseInt(action.params[0][0]),
                                   parseInt(action.params[0][1]),
                                   parseInt(action.params[1][0]),
                                   parseInt(action.params[1][1]),
-                                  player);
+                                  player)) {
+              actionsThatWork.push(action);
+            }
           }
           else console.warn('malformed movement');
           break;
@@ -94,7 +121,7 @@ ArenaManager.prototype.handleActions = function(game, player, actions, callback)
           break;
       }
     }
-    this.games[game].updateViews();
+    this.games[game].updateViews(actionsThatWork);
     this.games[game].changeTurn();
   }
   else throw 'invalid player';
@@ -105,15 +132,8 @@ ArenaManager.prototype.handleActions = function(game, player, actions, callback)
 };
 
 //bugger arena
-function BugArena(p_initMap, p_maxPlayers) {
-  if(p_initMap.length < 1)
-    throw "Invalid map size. Height < 1";
-  for(row p_initMap) {
-    if(row.length < 1) throw "Invalid map size. Width of a row < 1";
-  }
-  this._map = this.createMap(p_initMap);
-  this.height = p_initMap.length;
-  this.width = p_initMap[0].length;
+function BugArena(p_maxPlayers) {
+  this._map = undefined;
   this.players = []; //list of player ids
   this.started = false;
   this.ended = false;
@@ -134,6 +154,16 @@ BugArena.prototype.start = function() {
   if(!this.started) {
     this.turn = parseInt(Math.random() * this.maxPlayers);
     this.started = true;
+    this._map = this.createMap(map);
+
+    if(this._map.length < 1)
+      throw "Invalid map size. Height < 1";
+    for(var i = 0; i < this._map.length; i++) {
+      if(this._map[i].length < 1) throw "Invalid map size. Width of a row < 1";
+    }
+    this.height = this._map.length;
+    this.width = this._map[0].length;
+
     for(var i = 0; i < this.readyCallbacks.length; i++) {
       this.readyCallbacks[i](this._map);
     }
@@ -148,6 +178,7 @@ BugArena.prototype.addReadyCallback = function(callback) {
 
 BugArena.prototype.addTurnCallback = function(playerId, callback) {
   if(this.turnCallbacks[playerId]) throw "that player already has a turn callback";
+  console.log("adding callback function: " + callback + " to player: " + playerId);
   this.turnCallbacks[playerId] = callback;
 }
 
@@ -155,9 +186,9 @@ BugArena.prototype.addViewCallback = function(callback) {
   this.viewCallbacks.push(callback);
 }
 
-BugArena.prototype.updateViews = function() {
+BugArena.prototype.updateViews = function(actions) {
   for(var i = 0; i < this.viewCallbacks.length; i++) {
-    this.viewCallbacks[i](this._map);
+    this.viewCallbacks[i]([this._map, actions]);
   }
 }
 
@@ -171,13 +202,17 @@ BugArena.prototype.changeTurn = function() {
   this.turnCallbacks[this.players[this.turn]]();
 };
 
-BugArena.prototype.distance = function(x1,x2,y1,y2) {
+BugArena.prototype.distance = function(x1,y1,x2,y2) {
   return Math.abs(x1 - x2) + Math.abs(y1 - y2);
 }
 
 BugArena.prototype.hasPlayer = function(playerId) {
   return playerId != undefined && this.players.indexOf(playerId) !== -1;
 };
+
+BugArena.prototype.isFull = function() {
+  return this.maxPlayers == this.players.length;
+}
 
 BugArena.prototype.createMap = function(p_2dArray) {
   var map = [];
@@ -192,9 +227,9 @@ BugArena.prototype.createMap = function(p_2dArray) {
 };
 
 BugArena.prototype.addPlayer = function(playerId) {
-  this.players.push(playerId);
-  if(p_maxPlayers == this.players.length)
+  if(this.maxPlayers == this.players.length)
     throw "trying to add a player to a full game... ya noob";
+  this.players.push(playerId);
 };
 
 BugArena.prototype.getHtml = function(indent) {
@@ -229,11 +264,11 @@ BugArena.prototype.getObjectFromLetter = function(x,y,letter) {
       break;
     case "b":
       //player 1 bugs
-      retval = new Bug(x,y,1);
+      retval = new Bug(x,y,this.players[0]);
       break;
     case "B":
       //player2 bugs
-      retval = new Bug(x,y,2);
+      retval = new Bug(x,y,this.players[1]);
       break;
     case " ":
       break;
@@ -247,9 +282,12 @@ BugArena.prototype.getObjectFromLetter = function(x,y,letter) {
 
 BugArena.prototype.move = function(x1,y1,x2,y2,playerId) {
   var bug = this.mapHasBug(x1,y1,playerId)
+  console.log('moving bug: ' + JSON.stringify(bug));
+  console.log('moving a distance of ' + this.distance(x1,y1,x2,y2));
   if(bug && this.distance(x1,y1,x2,y2) < 2) {
-    var destinationObject = getObjectAt(x2,y2);
-    bug.energy -= ENERGY_PER_SPACE;
+    var destinationObject = this.getObjectAt(x2,y2);
+    if(!(destinationObject && destinationObject.type == 'wall'))
+      bug.energy -= ENERGY_PER_SPACE;
     
     //move to empty space
     if(!destinationObject) {
@@ -264,7 +302,7 @@ BugArena.prototype.move = function(x1,y1,x2,y2,playerId) {
         bug.destroy(this);
       }
     }
-    else if(destinationObject.prototype.constructor === Bug)
+    else if(destinationObject.type === 'bug')
     {
       //move onto your own bug
       if(destinationObject.playerId === playerId)
@@ -289,7 +327,13 @@ BugArena.prototype.move = function(x1,y1,x2,y2,playerId) {
         }
       }
     }
+    else {
+      return false;
+    }
+    console.log('RETURNS TRUE FROM MOVE!!!!!');
+    return true;
   }
+  return false;
 };
 
 BugArena.prototype.getObjectAt = function(x,y) {
@@ -298,7 +342,7 @@ BugArena.prototype.getObjectAt = function(x,y) {
 
 BugArena.prototype.mapHasBug = function(x,y,playerId) {
   var objectAt = this.getObjectAt(x,y);
-  if(typeof objectAt === "object" && objectAt.prototype.constructor === Bug && objectAt.playerId === playerId)
+  if(objectAt && typeof objectAt === "object" && objectAt.type === 'bug' && objectAt.playerId === playerId)
   {
     return objectAt;
   }
@@ -308,12 +352,9 @@ BugArena.prototype.mapHasBug = function(x,y,playerId) {
 BugArena.prototype.destroy = function(object) {
   if(object.x > 0 && object.x < this.width && object.y > 0 && object.y < this.height)
   {
-    if(this.getObjectAt(object.x, object.y) == object) {
-      this._map[object.y][object.x] = undefined;
-      object.x = undefined;
-      object.y = undefined;
-    }
-    else throw "trying to destroy object but x and y coordinates did not align with the map";
+    this._map[object.y][object.x] = undefined;
+    object.x = undefined;
+    object.y = undefined;
   }
   else throw "trying to destory object in invalid position";
 };
